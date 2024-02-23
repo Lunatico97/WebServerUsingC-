@@ -13,8 +13,10 @@
 
 #define MAX 256
 
-void error(std::string message){
+void error(std::string message, bool force_exit=true){
     std::cerr << "!!! " << message << " !!!" << std::endl ;
+    if(!exit)
+        return ;
     exit(1) ;
 }
 
@@ -43,12 +45,14 @@ class Client{
             if(server == NULL)
                 error("Can't find the host - Host doesn't exist") ;
             std::memcpy((struct sockaddr_in*) &server_address.sin_addr.s_addr, server->h_addr, server->h_length) ;
+            if (connect(sockfd,(struct sockaddr *) &server_address, sizeof(server_address)) < 0) 
+                error("Can't connect to the server");
         }
 
         void sendRequest(std::string request){
-            status = write(sockfd, request.c_str(), request.length());
+            status = write(sockfd, request.c_str(), request.length()) ;
             if(status < 0)
-                error("Can't send request to the server");
+                error("Can't send request to the server") ;
         }
 
         void getResponse(){
@@ -64,7 +68,25 @@ class Client{
         }
 } ;
 
-int main(int argc, char *argv[]){
+int main(int argc, char *argv[])
+{
+    if(argc < 3){
+        error("No host address or port assigned") ;
+    }
+    const char* host_name = argv[1] ;
+    int port = std::atoi(argv[2]) ;
+    Client *client = new Client(port) ;
+    client->connectWithServer(host_name) ;
+    std::string msg ;
 
-    return 0 ;
+    while(1){
+        std::cout << "You: " ;
+        std::getline(std::cin, msg, '\n') ;
+        client->sendRequest(msg) ;
+        client->getResponse() ;
+    }
+
+    client->terminateClient() ;
+    delete client ;
+    return 0; 
 }

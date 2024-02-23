@@ -12,8 +12,10 @@
 
 #define MAX 256
 
-void error(std::string message){
-    std::cerr << "!!! " << message << " !!!" << std::endl ;
+void error(std::string message, bool force_exit=false){
+    std::cerr << "ERROR - !!! " << message << " !!!" << std::endl ;
+    if(!force_exit)
+        return ;
     exit(1) ;
 }
 
@@ -49,34 +51,63 @@ class Server{
         void connectWithClient(int maxQueue = 5){
             if(listen(sockfd, maxQueue) < 0)
                 error("Can't find any client requests") ;
+            std::cout << "Listening for connections ... " << std::endl ; 
             socklen_t length = sizeof(client_address) ;
             cli_sockfd = accept(sockfd, (struct sockaddr *) &client_address, &length) ;
             if (cli_sockfd < 0) 
-                error("Can't accept connection from client at " + client_address.sin_addr.s_addr);
+                error("Can't accept connection from client at " + client_address.sin_addr.s_addr, false) ;
+            std::cout << "Client [" << client_address.sin_addr.s_addr << "] connected successfully! " << std::endl ;
+            this->busy = true ;
         }
 
         void getRequest(){
             std::memset(buffer, 0, sizeof(buffer)) ;
             status = read(cli_sockfd, buffer, sizeof(buffer)-1);
             if (status < 0)
-                error("Can't fetch request from client");
+                error("Can't fetch request from client", false) ;
             std::cout << "Client: " << buffer << std::endl ;
         }
 
         void sendResponse(std::string response){
             status = write(cli_sockfd, response.c_str(), response.length());
-            if(status < 0)
-                error("Can't send response to client");
+            if(status < 0){
+                this->busy = false ;
+                std::cout << "Client [" << client_address.sin_addr.s_addr << "] disconnected! " << std::endl ;
+                error("Can't send response to client", false) ;
+            }
         }
 
         void terminateServer(){
+            this->busy = false ;
             close(cli_sockfd) ;
             close(sockfd) ;
         }
+
+        bool busy ;
 } ;
 
 int main(int argc, char *argv[])
 {
-     
+    if(argc < 2){
+        error("No port assigned") ;
+    }
+    int port = std::atoi(argv[1]) ;
+    Server *server = new Server(port) ;
+    server->initialize() ;
+    server->getServerInfo() ;
+    std::string msg ;
+
+    while(1){
+        server->connectWithClient(1) ;
+        while(server->busy){
+            server->getRequest() ;
+            std::cout << "You: " ;
+            std::getline(std::cin, msg, '\n') ;
+            server->sendResponse(msg) ;
+        }
+    }
+
+    server->terminateServer() ;
+    delete server ;
     return 0; 
 }
