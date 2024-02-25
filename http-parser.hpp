@@ -6,7 +6,7 @@ class HTTPParser{
     private:
         std::vector<std::string> essentials ;
         std::string extension, method, file_path ;
-        std::string http_header = "HTTP/1.1 200 Ok\r\n";
+        std::string http_header ;
 
         std::vector<std::string> tokenize(char* text, const char* delimiter){
             std::vector<std::string> tokens ;
@@ -32,7 +32,8 @@ class HTTPParser{
             std::cout << "Parsing HTTP Request ---------> " << std::endl ;
             std::cout << "Request type: " << method << std::endl ; 
             std::cout << "File Path: " << file_path << std::endl ; 
-            
+            http_header = "HTTP/1.1 200 Ok\r\n" ;
+
             if(method == "GET"){
                 if(file_path.length() <= 1){
                     //char path_head[500] = ".";
@@ -42,6 +43,10 @@ class HTTPParser{
                 else{
                     extension = this->tokenize(file_path.data(), ".")[1] ;  
                     std::cout << "File type: " << extension << std::endl ; 
+                    if (extension == "ico"){
+                        file_path = "." + file_path ;
+                        http_header = http_header + "Content-Type: image/vnd.microsoft.icon\r\n\r\n" ;
+                    }
                 }
             }
             else if(method == "POST"){

@@ -66,18 +66,13 @@ class HTTPServer{
             this->busy = true ;
         }
 
-        void getRequest(){
+        void getHTTPRequest(){
             std::memset(buffer, 0, sizeof(buffer)) ;
             status = read(cli_sockfd, buffer, sizeof(buffer)-1);
             if (status < 0)
                 error("Can't fetch request from client", false) ;
             std::cout << "Client: " << buffer << std::endl ;
             parser->parseRequest(std::string(buffer)) ;
-        }
-
-        void sendResponse(std::string response){
-            status = write(cli_sockfd, response.c_str(), response.length());
-            
         }
 
         void sendHTTPResponse(){
@@ -109,8 +104,9 @@ class HTTPServer{
                 int bytesSent = sendfile(cli_sockfd, fd, NULL, blockSize);
                 totalSize = totalSize - bytesSent;
             }
+            //shutdown(fd, SHUT_RDWR);
             close(fd);
-            std::cout << "File sent successfully" << std::endl ;
+            std::cout << "------------- Response served ----------------" << std::endl ;
         }
 
         void terminateServer(){
@@ -135,11 +131,9 @@ int main(int argc, char *argv[])
 
     while(1){
         server->connectWithClient(1) ;
-        while(server->busy){
-            server->getRequest() ;
-            std::cout << "Server Response: " << std::endl ; 
-            server->sendHTTPResponse() ;
-        }
+        server->getHTTPRequest() ;
+        std::cout << "Server Response: " << std::endl ; 
+        server->sendHTTPResponse() ;
     }
 
     server->terminateServer() ;
