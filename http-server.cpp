@@ -12,26 +12,28 @@
 #include <sys/socket.h>
 #include <sys/sendfile.h>
 #include <netinet/in.h>
+#include "http-parser.hpp"
 
 #define MAX 20000
 
-void error(std::string message, bool force_exit=false){
+void error(std::string message, bool force_exit=true){
     std::cerr << "ERROR - !!! " << message << " !!!" << std::endl ;
     if(!force_exit)
         return ;
     exit(1) ;
 }
 
-class Server{
+class HTTPServer{
     private:
         struct sockaddr_in server_address, client_address ;
+        HTTPParser *parser ;
         int sockfd, cli_sockfd ;
         char buffer[MAX] ;
         int status ;
         int port ;
 
     public:
-        Server(int port_num){
+        HTTPServer(int port_num){
             std::memset((char*) &server_address, 0, sizeof(server_address)) ;
             sockfd = socket(AF_INET, SOCK_STREAM, 0);
             if (sockfd < 0) // sockfd == -1
@@ -43,6 +45,7 @@ class Server{
         }
 
         void initialize(){
+            parser = new HTTPParser() ; 
             if(bind(sockfd, (struct sockaddr *) &server_address, sizeof(server_address)) < 0) 
                 error("Can't bind socket with socket address");
         }
@@ -69,29 +72,36 @@ class Server{
             if (status < 0)
                 error("Can't fetch request from client", false) ;
             std::cout << "Client: " << buffer << std::endl ;
+            parser->parseRequest(std::string(buffer)) ;
         }
 
         void sendResponse(std::string response){
             status = write(cli_sockfd, response.c_str(), response.length());
+            
+        }
+
+        void sendHTTPResponse(){
+            /*
+                A request will be 'sort of' sent in this way by a client browser
+                "HTTP/1.1 200 Ok\r\n"
+                "Content-Type: image/jpeg\r\n\r\n";
+            */
+            std::string httpHeader = parser->getHeader() ;
+            std::string file_path = parser->getPath() ;
+            // Write a HTTP  for response
+            write(cli_sockfd, httpHeader.c_str(), httpHeader.length());
+            std::cout << httpHeader << file_path << std::endl ;
             if(status < 0){
                 this->busy = false ;
                 std::cout << "Client [" << client_address.sin_addr.s_addr << "] disconnected! " << std::endl ;
                 error("Can't send response to client", false) ;
             }
-        }
-
-        int sendHTTPResponse(std::string httpHeader, std::string file_path){
-            /*
-                char imageheader[] = 
-                "HTTP/1.1 200 Ok\r\n"
-                "Content-Type: image/jpeg\r\n\r\n";
-            */
+            // Serve the requested file from client
             struct stat statBuffer;  // Buffer for file info
             int fd = open(file_path.c_str(), O_RDONLY);
             if(fd < 0){
                 error("Error fetching file: " + file_path) ;
             }
-            write(cli_sockfd, httpHeader.c_str(), httpHeader.length());
             fstat(fd, &statBuffer) ;
             int totalSize = statBuffer.st_size;
             int blockSize = statBuffer.st_blksize;
@@ -100,10 +110,12 @@ class Server{
                 totalSize = totalSize - bytesSent;
             }
             close(fd);
+            std::cout << "File sent successfully" << std::endl ;
         }
 
         void terminateServer(){
             this->busy = false ;
+            delete parser ;
             close(cli_sockfd) ;
             close(sockfd) ;
         }
@@ -117,18 +129,16 @@ int main(int argc, char *argv[])
         error("No port assigned") ;
     }
     int port = std::atoi(argv[1]) ;
-    Server *server = new Server(port) ;
+    HTTPServer *server = new HTTPServer(port) ;
     server->initialize() ;
     server->getServerInfo() ;
-    std::string msg ;
 
     while(1){
         server->connectWithClient(1) ;
         while(server->busy){
             server->getRequest() ;
-            std::cout << "You: " ;
-            std::getline(std::cin, msg, '\n') ;
-            server->sendResponse(msg) ;
+            std::cout << "Server Response: " << std::endl ; 
+            server->sendHTTPResponse() ;
         }
     }
 

@@ -58,7 +58,7 @@ class HTTPParser{
         }
 } ;
 
-
+/*
 int main(int argc, char *argv[]){ 
     HTTPParser *parser = new HTTPParser() ;
     std::string request = "GET / HTTP/1.1" ;
@@ -68,3 +68,4 @@ int main(int argc, char *argv[]){
     delete parser ;
     return 0 ;
 }
+*/
