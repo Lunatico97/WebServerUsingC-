@@ -108,6 +108,7 @@ class HTTPServer{
                 int blockSize = statBuffer.st_blksize;
                 // Write a HTTP header for response
                 httpHeader = httpHeader + "Content-Length: " + std::to_string(totalSize) + "\r\n" ;
+                httpHeader = httpHeader + "Connection: close \r\n" ;
                 write(cli_sockfd, httpHeader.c_str(), httpHeader.length());
                 std::cout << httpHeader << file_path << std::endl ;
                 if(status < 0){
@@ -119,17 +120,20 @@ class HTTPServer{
                     int bytesSent = sendfile(cli_sockfd, fd, NULL, blockSize);
                     totalSize = totalSize - bytesSent;
                 }
-                shutdown(fd, SHUT_RDWR);
                 close(fd);
                 std::cout << "------------- Response served ----------------" << std::endl ;
+            }
+            else
+            {
+                close(cli_sockfd) ;
             }
         }
 
         void terminateServer(){
             this->busy = false ;
-            delete parser ;
-            close(cli_sockfd) ;
+            shutdown(cli_sockfd, SHUT_RDWR);
             close(sockfd) ;
+            delete parser ;
         }
 
         bool busy ;
