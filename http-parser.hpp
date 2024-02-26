@@ -38,14 +38,14 @@ class HTTPParser{
                 if(file_path.length() <= 1){
                     //char path_head[500] = ".";
                     file_path = "./index.html" ;
-                    http_header = http_header + "Content-Type: text/html\r\n\r\n" ;
+                    http_header = http_header + "Content-Type: text/html\r\n" ;
                 }
                 else{
                     extension = this->tokenize(file_path.data(), ".")[1] ;  
                     std::cout << "File type: " << extension << std::endl ; 
                     if (extension == "ico"){
                         file_path = "." + file_path ;
-                        http_header = http_header + "Content-Type: image/vnd.microsoft.icon\r\n\r\n" ;
+                        http_header = http_header + "Content-Type: image/vnd.microsoft.icon\r\n" ;
                     }
                 }
             }

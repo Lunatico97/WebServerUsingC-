@@ -25,8 +25,10 @@ void error(std::string message, bool force_exit=true){
 
 class HTTPServer{
     private:
-        struct sockaddr_in server_address, client_address ;
-        HTTPParser *parser ;
+        struct sockaddr_in server_address, client_address ; // Server address
+        std::string httpHeader, file_path ; // Variables to store parsed headers
+        struct stat statBuffer ;  // Buffer for file info
+        HTTPParser *parser ; 
         int sockfd, cli_sockfd ;
         char buffer[MAX] ;
         int status ;
@@ -34,20 +36,20 @@ class HTTPServer{
 
     public:
         HTTPServer(int port_num){
-            std::memset((char*) &server_address, 0, sizeof(server_address)) ;
             sockfd = socket(AF_INET, SOCK_STREAM, 0);
             if (sockfd < 0) // sockfd == -1
                 error("Can't create socket for connection") ;
             server_address.sin_addr.s_addr = INADDR_ANY ; // Server address of machine 
             server_address.sin_family = AF_INET ; // Internet Domain Network
             server_address.sin_port = htons(port_num); // Convert to network order bytes
+            std::memset(server_address.sin_zero, '\0', sizeof(server_address.sin_zero)) ;
             this->port = port_num ;
         }
 
         void initialize(){
             parser = new HTTPParser() ; 
             if(bind(sockfd, (struct sockaddr *) &server_address, sizeof(server_address)) < 0) 
-                error("Can't bind socket with socket address");
+                error("Can't bind socket with server address");
         }
 
         void getServerInfo(){
@@ -57,6 +59,7 @@ class HTTPServer{
         void connectWithClient(int maxQueue = 5){
             if(listen(sockfd, maxQueue) < 0)
                 error("Can't find any client requests") ;
+            std::cout << "----------------------------------------------------------------------\n" ;
             std::cout << "Listening for connections ... " << std::endl ; 
             socklen_t length = sizeof(client_address) ;
             cli_sockfd = accept(sockfd, (struct sockaddr *) &client_address, &length) ;
@@ -72,7 +75,17 @@ class HTTPServer{
             if (status < 0)
                 error("Can't fetch request from client", false) ;
             std::cout << "Client: " << buffer << std::endl ;
-            parser->parseRequest(std::string(buffer)) ;
+        }
+
+        void processHTTPRequest(){
+            std::string request = std::string(buffer) ;
+            //std::cout << "Buffer filled: " << request.length() << std::endl ;
+            if(request.length() < 1){
+                this->busy = false ;
+                std::cout << "[" << client_address.sin_addr.s_addr << "] disconnected ! " << std::endl ;
+            }
+            else
+                parser->parseRequest(std::string(buffer)) ;
         }
 
         void sendHTTPResponse(){
@@ -81,32 +94,35 @@ class HTTPServer{
                 "HTTP/1.1 200 Ok\r\n"
                 "Content-Type: image/jpeg\r\n\r\n";
             */
-            std::string httpHeader = parser->getHeader() ;
-            std::string file_path = parser->getPath() ;
-            // Write a HTTP  for response
-            write(cli_sockfd, httpHeader.c_str(), httpHeader.length());
-            std::cout << httpHeader << file_path << std::endl ;
-            if(status < 0){
-                this->busy = false ;
-                std::cout << "Client [" << client_address.sin_addr.s_addr << "] disconnected! " << std::endl ;
-                error("Can't send response to client", false) ;
+            std::cout << "Server Response: " << std::endl ; 
+            if(this->busy){
+                httpHeader = parser->getHeader() ;
+                file_path = parser->getPath() ;
+                // Serve the requested file from client
+                int fd = open(file_path.c_str(), O_RDONLY);
+                if(fd < 0){
+                    error("Error fetching file: " + file_path) ;
+                }
+                fstat(fd, &statBuffer) ;
+                int totalSize = statBuffer.st_size;
+                int blockSize = statBuffer.st_blksize;
+                // Write a HTTP header for response
+                httpHeader = httpHeader + "Content-Length: " + std::to_string(totalSize) + "\r\n" ;
+                write(cli_sockfd, httpHeader.c_str(), httpHeader.length());
+                std::cout << httpHeader << file_path << std::endl ;
+                if(status < 0){
+                    this->busy = false ;
+                    std::cout << "Client [" << client_address.sin_addr.s_addr << "] disconnected! " << std::endl ;
+                    error("Can't send response to client", false) ;
+                }
+                while(totalSize > 0){
+                    int bytesSent = sendfile(cli_sockfd, fd, NULL, blockSize);
+                    totalSize = totalSize - bytesSent;
+                }
+                shutdown(fd, SHUT_RDWR);
+                close(fd);
+                std::cout << "------------- Response served ----------------" << std::endl ;
             }
-            // Serve the requested file from client
-            struct stat statBuffer;  // Buffer for file info
-            int fd = open(file_path.c_str(), O_RDONLY);
-            if(fd < 0){
-                error("Error fetching file: " + file_path) ;
-            }
-            fstat(fd, &statBuffer) ;
-            int totalSize = statBuffer.st_size;
-            int blockSize = statBuffer.st_blksize;
-            while(totalSize > 0){
-                int bytesSent = sendfile(cli_sockfd, fd, NULL, blockSize);
-                totalSize = totalSize - bytesSent;
-            }
-            //shutdown(fd, SHUT_RDWR);
-            close(fd);
-            std::cout << "------------- Response served ----------------" << std::endl ;
         }
 
         void terminateServer(){
@@ -131,9 +147,17 @@ int main(int argc, char *argv[])
 
     while(1){
         server->connectWithClient(1) ;
-        server->getHTTPRequest() ;
-        std::cout << "Server Response: " << std::endl ; 
-        server->sendHTTPResponse() ;
+        int pid = fork();
+        if(pid < 0){
+            error("Error creating request handler thread") ;
+        }
+        if(pid == 0){
+            while(server->busy){
+                server->getHTTPRequest() ;
+                server->processHTTPRequest() ;
+                server->sendHTTPResponse() ;
+            }
+        }
     }
 
     server->terminateServer() ;
